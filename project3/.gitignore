@@ -1,0 +1,19 @@
+# Data Project 3. This file overrides the Session 15 .gitignore one folder up,
+# which ignores every data/ and charts/ folder.
+
+# raw landing files stay on your laptop; the small sample is committed
+!data/
+data/*
+!data/sample/
+
+# charts are committed (your README shows them)
+!charts/
+
+# never commit
+*.duckdb
+*.duckdb.wal
+*.parquet.tmp
+.venv/
+.env
+__pycache__/
+*.log

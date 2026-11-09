@@ -1,0 +1,7 @@
+requests
+requests_sse
+quixstreams
+tornado
+duckdb
+pymysql
+pandas
