@@ -1,0 +1,4 @@
+PARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK
+0          2       2      [0 1 2]   0                 1758
+1          0       1      [0 1 2]   0                 1973
+2          1       2      [0 1 2]   0                 4529
