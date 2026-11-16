@@ -22,6 +22,7 @@ Add to the entry at the end of every class, and whenever you stop working. Short
 
 ## Session 4 · Mon 16 Nov
 - Done: flow.py (two runs, same numbers), sample, chart, analysis, README complete
+- Peer test: Wilson followed my README on a fresh clone. He ran flow.py from ds3022-streaming instead of project3 and got "No files found". I added a note to How to run. Chart swap: He read my chart correctly.
 - Raw records so far: 74,842
 - Next: submit
 - Blocked: nothing

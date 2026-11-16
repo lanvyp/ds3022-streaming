@@ -16,6 +16,8 @@ One message = one event from one account: `did` (account id), `time_us` (when Je
 
 ## How to run
 
+Run every project command from the project3 folder (cd project3), or the flow finds no files
+
 From a fresh clone, on macOS / Linux:
 
 ```bash
@@ -142,3 +144,4 @@ Before this project I thought of a pipeline as something that either works or br
 
 - **Reused code:** the WebSocket code in `producer.py` is based on `probe.py`. `lander.py` and `flow.py` follow the class scripts (`quakes_lander.py`, `quakes_flow.py`) and the Session 2 worksheet. `four_numbers.py` is copied from the Session 2 worksheet (Appendix A5).
 - **AI:** I used Claude (Anthropic) to catch up after missing the setup sessions. It walked me through setup, wrote first versions of `producer.py`, `lander.py` and `flow.py`, helped fill `SOURCE_CARD.md` with my probe numbers, helped me figure out the D5 duplicates, and drafted this README. I checked everything by running it: the lander's raw count matched the topic (8,260 and later 73,842), every chaos card gave the numbers I predicted, and two flow runs gave the same four numbers.
+- **Peer Test:** Wilson followed my README on a fresh clone. He ran flow.py from ds3022-streaming instead of project3 and got "No files found". I added a note to How to run. Chart swap: He read my chart correctly.

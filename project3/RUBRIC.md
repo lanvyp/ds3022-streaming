@@ -98,7 +98,7 @@ Three things worth noticing before you plan your time:
 
 | # | Requirement | Pts | Evidence to look for | Self | Score |
 |---|---|---:|---|:--:|:--:|
-| 5.1 | **How to run** works from a fresh clone (peer-tested in Session 4, Mon 16 Nov) | 5 | Grader follows it | P | |
+| 5.1 | **How to run** works from a fresh clone (peer-tested in Session 4, Mon 16 Nov) | 5 | Grader follows it | Y | |
 | 5.2 | **Architecture** diagram with your file, topic, table and chart names | 3 | README / `docs/` | Y | |
 | 5.3 | **Design decisions**: all six answered in your own words with your own numbers | 6 | README section | Y | |
 | 5.4 | **Sample and numbers**: `data/sample/` committed (≤ 5 MB) and the four-numbers table filled for full data and sample | 3 | Repository; README table | Y | |
