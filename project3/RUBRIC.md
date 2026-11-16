@@ -44,11 +44,11 @@ Three things worth noticing before you plan your time:
 
 | # | Requirement | Pts | Evidence to look for | Self | Score |
 |---|---|---:|---|:--:|:--:|
-| 1.1 | **Producer runs** from the README commands and fills the topic | 4 | README steps; `producer.py` | | |
-| 1.2 | **Topic design**: created with `-p 3 -r 3` before producing; key chosen and justified | 4 | Console screenshot (3 partitions); Design decision 1 | | |
-| 1.3 | **Real-world handling**: reconnect with a pause, rate limits or paging respected, missing fields do not crash the producer | 5 | Code; Challenges section | | |
-| 1.4 | **At least 50,000 raw records landed**, shown by the flow log | 5 | Flow log screenshot; four-numbers table | | |
-| 1.5 | **One envelope** (`{"action", "data"}`) for every message, history and live alike | 2 | Code; sample message | | |
+| 1.1 | **Producer runs** from the README commands and fills the topic | 4 | README steps; `producer.py` | Y | |
+| 1.2 | **Topic design**: created with `-p 3 -r 3` before producing; key chosen and justified | 4 | Console screenshot (3 partitions); Design decision 1 | Y | |
+| 1.3 | **Real-world handling**: reconnect with a pause, rate limits or paging respected, missing fields do not crash the producer | 5 | Code; Challenges section | Y | |
+| 1.4 | **At least 50,000 raw records landed**, shown by the flow log | 5 | Flow log screenshot; four-numbers table | Y | |
+| 1.5 | **One envelope** (`{"action", "data"}`) for every message, history and live alike | 2 | Code; sample message | Y | |
 
 **Subtotal: ___ / 20**
 
@@ -58,11 +58,11 @@ Three things worth noticing before you plan your time:
 
 | # | Requirement | Pts | Evidence to look for | Self | Score |
 |---|---|---:|---|:--:|:--:|
-| 2.1 | **Raw Parquet batches**: size and time rule, `.tmp` then rename, `raw` column kept | 5 | `lander.py` | | |
-| 2.2 | **Offsets stored after the file exists** (at-least-once) | 4 | `lander.py` | | |
-| 2.3 | **Malformed messages landed**, not skipped and not crashing the lander | 3 | Code; malformed count in the flow log | | |
-| 2.4 | **Chaos round**: D1 and D2 plus one more card, each with a prediction and numbers before and after | 6 | README Chaos round table | | |
-| 2.5 | **Useful logging** (progress, skips, reconnects), no log files committed | 2 | Code; repository file list | | |
+| 2.1 | **Raw Parquet batches**: size and time rule, `.tmp` then rename, `raw` column kept | 5 | `lander.py` | Y | |
+| 2.2 | **Offsets stored after the file exists** (at-least-once) | 4 | `lander.py` | Y | |
+| 2.3 | **Malformed messages landed**, not skipped and not crashing the lander | 3 | Code; malformed count in the flow log | Y | |
+| 2.4 | **Chaos round**: D1 and D2 plus one more card, each with a prediction and numbers before and after | 6 | README Chaos round table | Y | |
+| 2.5 | **Useful logging** (progress, skips, reconnects), no log files committed | 2 | Code; repository file list | Y | |
 
 **Subtotal: ___ / 20**
 
@@ -72,11 +72,11 @@ Three things worth noticing before you plan your time:
 
 | # | Requirement | Pts | Evidence to look for | Self | Score |
 |---|---|---:|---|:--:|:--:|
-| 3.1 | **Modular Prefect flow** (load raw → stage → entities → marts → charts) that runs with one command, on full data or `data/sample` | 5 | `flow.py`; grader runs it on the sample | | |
-| 3.2 | **Both kinds of duplicates removed**: re-landed Kafka records and repeated entities | 5 | Stage and entity SQL; Design decision 4 | | |
-| 3.3 | **Cleaning**: nested fields parsed, types cast, malformed and test records excluded | 4 | Stage SQL | | |
-| 3.4 | **Idempotent**: two runs give the same four numbers | 3 | Grader runs it twice on the sample | | |
-| 3.5 | **The four numbers** logged and reported (full data and sample) | 3 | Flow log; README table | | |
+| 3.1 | **Modular Prefect flow** (load raw → stage → entities → marts → charts) that runs with one command, on full data or `data/sample` | 5 | `flow.py`; grader runs it on the sample | Y | |
+| 3.2 | **Both kinds of duplicates removed**: re-landed Kafka records and repeated entities | 5 | Stage and entity SQL; Design decision 4 | Y | |
+| 3.3 | **Cleaning**: nested fields parsed, types cast, malformed and test records excluded | 4 | Stage SQL | Y | |
+| 3.4 | **Idempotent**: two runs give the same four numbers | 3 | Grader runs it twice on the sample | Y | |
+| 3.5 | **The four numbers** logged and reported (full data and sample) | 3 | Flow log; README table | Y | |
 
 **Subtotal: ___ / 20**
 
@@ -86,9 +86,9 @@ Three things worth noticing before you plan your time:
 
 | # | Requirement | Pts | Evidence to look for | Self | Score |
 |---|---|---:|---|:--:|:--:|
-| 4.1 | **Research question** answered with a non-trivial query: time windows, a comparison, an anomaly or a join | 5 | Marts SQL; Analysis section | | |
-| 4.2 | **At least one clear chart**: title, labelled axes with units, readable without explanation | 5 | `charts/`; README | | |
-| 4.3 | **Analysis paragraph**: a surprising or non-obvious finding and one limitation | 5 | README Analysis section | | |
+| 4.1 | **Research question** answered with a non-trivial query: time windows, a comparison, an anomaly or a join | 5 | Marts SQL; Analysis section | Y | |
+| 4.2 | **At least one clear chart**: title, labelled axes with units, readable without explanation | 5 | `charts/`; README | Y | |
+| 4.3 | **Analysis paragraph**: a surprising or non-obvious finding and one limitation | 5 | README Analysis section | Y | |
 
 **Subtotal: ___ / 15**
 
@@ -98,12 +98,12 @@ Three things worth noticing before you plan your time:
 
 | # | Requirement | Pts | Evidence to look for | Self | Score |
 |---|---|---:|---|:--:|:--:|
-| 5.1 | **How to run** works from a fresh clone (peer-tested in Session 4, Mon 16 Nov) | 5 | Grader follows it | | |
-| 5.2 | **Architecture** diagram with your file, topic, table and chart names | 3 | README / `docs/` | | |
-| 5.3 | **Design decisions**: all six answered in your own words with your own numbers | 6 | README section | | |
-| 5.4 | **Sample and numbers**: `data/sample/` committed (≤ 5 MB) and the four-numbers table filled for full data and sample | 3 | Repository; README table | | |
-| 5.5 | **Reflection** (about 150 words) and **Acknowledgements** (help, reused code, AI use and how it was checked) | 3 | README sections | | |
-| 5.6 | **Repository hygiene**: work in `project3/` of `ds3022-streaming`; no `data/raw/`, `*.duckdb`, `.venv/` or `.env` committed; `PROGRESS.md` kept each session; `dp3-submit` tag | 5 | `git ls-files`; `kit/check_project.py` | | |
+| 5.1 | **How to run** works from a fresh clone (peer-tested in Session 4, Mon 16 Nov) | 5 | Grader follows it | P | |
+| 5.2 | **Architecture** diagram with your file, topic, table and chart names | 3 | README / `docs/` | Y | |
+| 5.3 | **Design decisions**: all six answered in your own words with your own numbers | 6 | README section | Y | |
+| 5.4 | **Sample and numbers**: `data/sample/` committed (≤ 5 MB) and the four-numbers table filled for full data and sample | 3 | Repository; README table | Y | |
+| 5.5 | **Reflection** (about 150 words) and **Acknowledgements** (help, reused code, AI use and how it was checked) | 3 | README sections | Y | |
+| 5.6 | **Repository hygiene**: work in `project3/` of `ds3022-streaming`; no `data/raw/`, `*.duckdb`, `.venv/` or `.env` committed; `PROGRESS.md` kept each session; `dp3-submit` tag | 5 | `git ls-files`; `kit/check_project.py` | Y | |
 
 **Subtotal: ___ / 25**
 
