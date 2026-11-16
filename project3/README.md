@@ -5,131 +5,140 @@
 
 ## Data source
 
-I stream new and deleted Bluesky posts from **Jetstream**, a public service that turns the Bluesky firehose into plain JSON over a **WebSocket** (push):
+I stream Bluesky posts from **Jetstream**, a public WebSocket (push) that sends the Bluesky firehose as JSON:
 `wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post`
 
-The `wantedCollections` filter asks only for posts (no likes, follows or reposts). No account or API key is needed; my producer sends a User-Agent anyway. I stream live, and Jetstream can also replay a limited window with `?cursor=<time_us>`, which I used for card D5.
+- No account or API key needed (I send a User-Agent anyway).
+- `wantedCollections` filters to posts only, so no likes or follows.
+- I stream live. Jetstream can also replay a short window with `?cursor=<time_us>`, which I used for card D5.
 
-One message is one event from one account: `did` (the account id), `time_us` (when Jetstream received it, in microseconds), `kind` (`commit` for posts, `identity`/`account` for account changes) and `commit` with `operation` (`create` or `delete`), `rkey` (the post id within the account) and, for new posts, `record` with `text`, `langs`, `createdAt` and `reply` (present only if the post is a reply). In my probe (Mon 09 Nov) the rate was **45.1 messages/s**; 1.4% of messages had no `commit` and 6.4% had no `record` (deletes).
+One message = one event from one account: `did` (account id), `time_us` (when Jetstream got it), `kind`, and `commit` with `operation` (create/delete), `rkey` (post id) and, for new posts, `record` (`text`, `langs`, `createdAt`, and `reply` if it's a reply). My probe measured **45.1 messages/s**.
 
 ## How to run
 
-From a fresh clone, in a terminal (macOS / Linux):
+From a fresh clone, on macOS / Linux:
 
 ```bash
-# 1. Virtual environment and packages (in the ds3022-streaming folder)
+# 1. Venv + packages (in ds3022-streaming)
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install prefect matplotlib
 
-# 2. Start the 3-broker cluster (never use -v: it deletes the topics)
+# 2. Start the 3-broker cluster (never -v, it deletes the topics)
 docker compose up -d
 docker exec -it redpanda-0 rpk cluster info
 
-# 3. Create the topic BEFORE the producer runs
+# 3. Create the topic BEFORE the producer
 docker exec -it redpanda-0 rpk topic create bluesky_posts -p 3 -r 3
 
 # 4. Terminal 1: producer (Ctrl+C to stop)
 cd project3
 python producer.py
 
-# 5. Terminal 2: lander (Ctrl+C to stop); files appear in data/raw/
+# 5. Terminal 2: lander (writes data/raw/)
 cd project3
 python lander.py
 
-# 6. Terminal 3: the four numbers from the raw files
+# 6. Terminal 3: quick count of the raw files
 cd project3
 python four_numbers.py did,rkey
 
-# 7. The flow, on the full data and on the committed sample
+# 7. Flow on the full data and on the sample
 python flow.py
 python flow.py data/sample      # runs without Kafka, on the committed sample
 ```
 
-Stop everything with Ctrl+C in each terminal, then `docker compose down` in the `ds3022-streaming` folder.
+Optional: `prefect server start` in a 4th terminal for the dashboard at http://127.0.0.1:4200.
 
 ## Architecture
 
 ```
-Jetstream WebSocket (wss://jetstream2.us-east.bsky.network, posts only)
-        │  push, ~45 messages/s
-        ▼
-producer.py ── envelope {"action": "live", "data": <event>}, key = did
+Jetstream WebSocket (posts only, ~45/s)
         │
         ▼
-Kafka topic bluesky_posts  (3 partitions, replication factor 3, Redpanda brokers 0-2)
-        │  consumer group bluesky_posts_lander
-        ▼
-lander.py ── 1,000 records or 60 s per file, .tmp then rename, offsets stored after the file
+producer.py   envelope {"action": "live", "data": <event>}, key = did
         │
         ▼
-data/raw/bluesky_<time>_<id>.parquet   (13 columns, incl. raw JSON)
+Kafka topic bluesky_posts   (3 partitions, replication factor 3)
+        │   consumer group bluesky_posts_lander
+        ▼
+lander.py     1,000 records or 60 s per file, .tmp then rename, offsets after the file
         │
         ▼
-flow.py (Prefect + DuckDB)
-   load_raw → stage → entities → marts → charts
-   TODO: table and chart names once flow.py is written
+data/raw/bluesky_<time>_<id>.parquet
+        │
+        ▼
+flow.py (Prefect + DuckDB, bluesky.duckdb)
+   load_raw  → raw_posts               every raw row
+   stage     → stg_records             one row per Kafka record, malformed removed
+   entities  → posts                   one row per post (did + rkey), creates only
+   marts     → top_languages, mart_reply_share_10min, mart_reply_share
+   charts    → charts/reply_share_by_language.png
 ```
+
+Screenshots in `docs/`: `topic.png` + `partitions.txt` (3 partitions), `flow_log.png` (2 runs, same numbers), `prefect_dashboard.png` (the 5 tasks).
 
 ## Design decisions
 
-1. **Key and partitions.** My key is `did`, the account id. All events of one account go to the same partition in order, so a post's `create` always comes before its `delete`. With thousands of accounts the load spreads over the 3 partitions, but not evenly: after my first run the partitions held 1,758 / 1,973 / 4,529 messages, because a few very active (bot) accounts all hash to the same partition. A key like `lang` would be much worse: most posts are English, so almost everything would land on one partition, and order per account would be lost.
+1. **Key and partitions.** My key is `did` (the account). All events from one account go to the same partition in order, so a post's create always comes before its delete. It wasn't perfectly balanced though: my first run gave 1,758 / 1,973 / 4,529, because a few really busy bot accounts land on the same partition. Keying by `lang` would be way worse, since most posts are English and almost everything would end up on one partition.
 
-2. **Batch size and time.** A file closes at 1,000 records or after 60 seconds. At about 45 messages/s, 1,000 records arrive in about 22 seconds, so the **size rule closes almost every batch**; the 60-second rule only closes the last, smaller batch when the producer stops (for example my first run: 8 files of 1,000, then one of 260 after 60 s). That makes about 45 × 3,600 / 1,000 ≈ **162 files per hour** while streaming live.
+2. **Batch size and time.** A file closes at 1,000 records or after 60 s. At ~45 messages/s, 1,000 records take about 22 s, so the **size rule closes almost every batch**. The 60 s rule only closes the last small batch when the producer stops (my first run: 8 files of 1,000, then one of 260). That's about 162 files per hour when streaming live.
 
-3. **Offsets after the file.** The lander stores offsets only after the Parquet file exists. If it crashes between the two (card D1), the file is on disk but Kafka still thinks those records were not read, so the restarted lander reads them again and writes a second copy: raw went from 8,260 to 11,943 for 2,683 new records, because the crashed batch of 1,000 was landed twice. I accept this (at-least-once) because a duplicate can be removed later, while the opposite order (offsets first, then file) could lose 1,000 records forever if the crash came in between.
+3. **Offsets after the file.** The lander stores offsets only after the file exists. If it crashes in between (card D1), Kafka thinks those records weren't read, so the lander reads them again and writes a second copy. My raw went from 8,260 to 11,943 for 2,683 new records, because the crashed batch of 1,000 was landed twice. I'm fine with that (at-least-once), because a duplicate can be removed later, but if offsets were stored first, a crash could lose 1,000 records for good.
 
-4. **Duplicates.** Two rows are **the same Kafka record** when they have the same `kafka_partition` + `kafka_offset` (the D1 crash makes these). Two rows are **the same post** when they have the same `did` + `rkey`, even with different offsets (a replay makes these: in D5, 26,956 posts arrived twice). TODO: name the SQL in flow.py that removes each kind (DISTINCT on partition + offset in stage; one row per did + rkey in entities).
+4. **Duplicates.** Same **Kafka record** = same `kafka_partition` + `kafka_offset` (from the D1 crash). The `stage` task removes these with `SELECT DISTINCT` (without `landed_at`, the only column that changes between two landings). Same **post** = same `did` + `rkey`, even with a different offset (from a replay: in D5, 26,956 posts came twice). The `entities` task keeps one row per post with `row_number() OVER (PARTITION BY did, rkey ORDER BY kafka_offset)` and `rn = 1`, and only `create` events. Result: 74,842 raw → 73,841 Kafka records → 35,697 posts.
 
-5. **Windows and time.** TODO: which time column (I plan to use `time_us`, the event time, not `landed_at`) and window size (10 minutes), and why. Note for this answer: landing time is wrong for replays, because my D5 replay landed 10 minutes of posts in about 3 seconds.
+5. **Windows and time.** I use `time_us` (event time, when Jetstream got the post), not `landed_at`. Landing time is wrong for replays: my D5 replay landed 10 minutes of posts in about 3 seconds. I don't use `createdAt` either, because the user's app sets it and it can be wrong. I use 10-minute windows (`time_bucket`). That's about 27,000 events per window, enough for a stable share per language, and my data covers 4 windows.
 
-6. **Ten times the volume.** At 10× (about 450 messages/s) Kafka itself would be fine, but the lander would close a 1,000-record file every 2 seconds, about 1,600 small files per hour, and one Python process turning every message into a row could fall behind. The flow would also slow down reading thousands of small files. I would raise the batch size (for example 10,000 records), run 3 landers in the same consumer group (one per partition), and compact old raw files into larger ones.
+6. **Ten times the volume.** At ~450 messages/s, Kafka would be fine, but the lander would close a file every 2 s (about 1,600 small files an hour), and one Python process might fall behind. The flow would also get slow reading thousands of small files. I'd make batches bigger (like 10,000), run 3 landers in the same consumer group (one per partition), and merge old raw files into bigger ones.
 
 ## Chaos round
 
 | Card | Prediction | What I did | Numbers before → after | Explanation |
 |---|---|---|---|---|
-| D1 Crash between file and offsets | raw goes up by the new records plus 1,000 extra, unique Kafka records only by the new records | Stopped the lander, ran `python producer.py` for 2,683 messages, ran `python lander.py crash` (one file, then exit before storing offsets), then `python lander.py` | raw 8,260 → 11,943; malformed 0 → 0; unique records 8,260 → 10,943; unique did+rkey 8,142 → 10,744 | The crash happened after the file was written but before offsets were stored, so the restarted lander read the same 1,000 records again (at-least-once). The copy has the same partition + offset, so DISTINCT in the flow removes it and the flow stays idempotent. |
-| D2 Poison message | raw +1 and malformed +1; the lander keeps running; unique records and posts unchanged | `docker exec -it redpanda-0 rpk topic produce bluesky_posts -k bad`, typed `this is not JSON`, waited for the next Landed line, counted | raw 11,943 → 11,944; malformed 0 → 1; unique records 10,943 → 10,943; unique did+rkey 10,744 → 10,744 | `to_row()` caught the JSON error and landed the text as `malformed` (land everything, decide later). The lander did not crash, so the partition was not blocked by a poison message that it would read again after every restart. |
-| D5 Send it again | raw and unique Kafka records go up by everything I resend, but unique did+rkey goes up much less, because resent posts are the same posts | Found max(`time_us`) minus 2 minutes (cursor `1794489977064640`), then ran `python producer.py 1794489977064640`. By accident I ran it twice, in two terminals (30,622 + 32,276 messages), so the same 10 minutes of posts were sent twice. Waited 60 s, counted | raw 11,944 → 74,842; malformed 1 → 1; unique records 10,943 → 73,841; unique did+rkey 10,744 → 39,517 | Resent posts become new Kafka records with new offsets, so DISTINCT on partition + offset cannot remove them; they are the same post (same did + rkey). 26,956 posts arrived exactly twice. The flow removes them by keeping one row per did + rkey: the second kind of duplicate. Raw grew by 62,898 = 30,622 + 32,276, which is how I found the double run. |
+| D1 Crash between file and offsets | raw goes up by the new records + 1,000 extra; unique Kafka records only by the new records | Stopped the lander, ran `producer.py` for 2,683 messages, ran `python lander.py crash`, then `python lander.py` | raw 8,260 → 11,943; malformed 0 → 0; unique records 8,260 → 10,943; unique did+rkey 8,142 → 10,744 | It crashed after writing the file but before storing offsets, so the restarted lander read the same 1,000 records again (at-least-once). Same partition + offset, so DISTINCT in the flow removes the copy. |
+| D2 Poison message | raw +1, malformed +1, lander keeps running, the rest stays the same | `docker exec -it redpanda-0 rpk topic produce bluesky_posts -k bad`, typed `this is not JSON`, waited for the next Landed line, counted | raw 11,943 → 11,944; malformed 0 → 1; unique records 10,943 → 10,943; unique did+rkey 10,744 → 10,744 | `to_row()` caught the JSON error and landed it as `malformed` (land everything, decide later). The lander didn't crash, so the partition didn't get stuck on a message it would read again after every restart. |
+| D5 Send it again | raw and unique Kafka records go up, but unique did+rkey goes up much less, since resent posts are the same posts | Took max(`time_us`) minus 2 min (cursor `1794489977064640`) and ran `python producer.py 1794489977064640`. I accidentally ran it twice in two terminals (30,622 + 32,276 messages), so the same 10 minutes got sent twice. Waited 60 s, counted | raw 11,944 → 74,842; malformed 1 → 1; unique records 10,943 → 73,841; unique did+rkey 10,744 → 39,517 | Resent posts become new Kafka records with new offsets, so DISTINCT on partition + offset can't catch them, but they're the same post (same did + rkey). 26,956 posts came exactly twice. The flow keeps one row per did + rkey. I found the double run because raw grew by 62,898 = 30,622 + 32,276. |
 
 ## The four numbers
 
-From the flow log on the full data (screenshot in `docs/`):
+From the flow log (screenshot in `docs/flow_log.png`):
 
 | Number | Full data | Sample (`data/sample`) |
 |---|---:|---:|
-| Raw records landed | TODO | TODO |
-| Malformed (kept in raw) | TODO | TODO |
-| Unique Kafka records | TODO | TODO |
-| Unique posts (did + rkey) | TODO | TODO |
+| Raw records landed | 74,842 | 5,000 |
+| Malformed (kept in raw) | 1 | 0 |
+| Unique Kafka records | 73,841 | 4,996 |
+| Unique posts (did + rkey) | 35,697 | 4,353 |
+
+Two runs in a row gave the same numbers. The sample is 5,000 random raw rows, so it missed my one malformed row, but it still has duplicates for the flow to clean.
 
 ## Challenges / Obstacles
 
-- **Fast source.** Jetstream sends about 45 posts/s even with the posts-only filter, so the topic grows quickly. I log one line every 1,000 messages instead of every message.
-- **Missing fields.** Deleted posts have no `record`, account events have no `commit`, and 17% of posts have no `langs`. `to_row()` reads everything with `.get()`, so missing fields become NULL instead of crashing the lander.
-- **Uneven partitions.** Keying by `did` put 4,529 of my first 8,260 messages on one partition, because of a few very active accounts. I kept the key because order per account matters more than perfect balance.
-- **Redpanda Console showed wrong partition counts** (1,758 on every partition). I saved the real counts from `rpk topic describe` in `docs/partitions.txt`.
-- **Replay bursts and an accidental double run.** A cursor replay sends minutes of posts in seconds (31,000 in about 3 s). I also ran the replay twice by mistake; I found it by comparing raw growth (62,898) with the producer logs (30,622 + 32,276) and with the topic high watermarks (73,842 in total).
-- TODO: anything hard in the flow and analysis.
+- **Fast source.** ~45 posts/s, so I log every 1,000 messages instead of every message.
+- **Missing fields.** Deletes have no `record`, account events have no `commit`, 17% of posts have no `langs`. `to_row()` uses `.get()` everywhere so missing fields become NULL instead of crashing.
+- **Uneven partitions** because of busy accounts (4,529 of my first 8,260 on one partition). I kept `did` because order per account matters more.
+- **Redpanda Console showed wrong counts** (1,758 on every partition), so I saved the real ones from `rpk topic describe` in `docs/partitions.txt`.
+- **Replay burst + my double run.** A replay sends minutes of posts in seconds (31,000 in ~3 s). I found my accidental double run by comparing raw growth (62,898) with the producer logs and the topic total (73,842).
+- **Messy language codes.** The same language shows up as `en` and `en-US`, so I lowercase it in stage. I kept `en-us` separate on purpose because it turned out to be a totally different group of accounts (see Analysis).
+- **Flow vs. `four_numbers.py`.** `four_numbers.py` counted 39,517 did + rkey, the flow 35,697 posts, because the flow only counts creates. Deletes of posts from before I started have their own did + rkey.
 
 ## Analysis
 
-TODO: after flow.py. Research question: which languages reply the most? Share of replies vs. original posts for the top 5 languages, in 10-minute windows. Add what the data shows, one surprising finding and one limitation.
+**Question: which languages reply the most on Bluesky?** For the top 5 languages in my 35,697 posts, I calculated the share of posts that are replies, in 10-minute windows and overall (`mart_reply_share_10min`, `mart_reply_share`). German (65.8%), English (56.1%) and Spanish (53.5%) are mostly replies, but Japanese is mostly original posts (19.8%). The surprise was **`en-us`: 1,240 posts with only 0.1% replies**. I checked and `en` posts come from 11,339 accounts (no account above 0.2%), but `en-us` posts come from only **29 accounts, and one of them wrote 37%**. So `en-us` isn't "Americans who don't reply", it's a few bots or news feeds that post and never reply. **Limitation:** I only have about 35 minutes from one afternoon (Thu 12 Nov, ~14:10 to 14:36 Valencia time, 4 windows), so the shares could change at other times of day, and the language is set by each app, so some posts are tagged wrong or not at all.
 
 ## Plot / Visualization
 
-TODO: after flow.py.
+![Share of Bluesky posts that are replies, top 5 languages](charts/reply_share_by_language.png)
 
-![TODO chart title](charts/TODO.png)
+Each bar is the % of a language's posts that are replies, with the number of posts on top. Duplicates are removed before counting.
 
 ## Reflection
 
-TODO: about 150 words, in your own words, first person. What did you learn about streaming systems that you did not know before Thu 22 Oct? What would you do differently if you started again?
+Before this project I thought of a pipeline as something that either works or breaks. Streaming taught me that it’s actually more about what happens when things end up going wrong. In card D1 I saw at-least-once delivery for real where the lander crashed after writing a file and read the same 1,000 records again and raw went from 8,260 to 11,943. Nothing was lost and the duplicates were easy to remove later. D5 surprised me a lot because Kafka can’t catch every duplicate so a replayed post gets a new offset so only my flow (did + rkey) can tell it’s the same post. I also learned to trust numbers. I found my own mistake by running the replay twice and comparing raw growth with the producer logs and the topic total. If I started again then I would set up Docker and the producer earlier, collect data at different times of day so my analysis covers more than 35 minutes, and keep one terminal per job so I don’t run things twice.
 
 ## Acknowledgements
 
-- **Reused code:** the WebSocket connection code in `producer.py` is based on `probe.py` from the kit. `lander.py` follows the class `quakes_lander.py` and the Session 2 worksheet (Appendix A1 and A3). `four_numbers.py` is copied from the Session 2 worksheet (Appendix A5).
-- **AI assistance:** I used Claude (Anthropic) to help me catch up after missing the setup sessions: it walked me through the setup, wrote first versions of `producer.py` and `lander.py`, helped me fill `SOURCE_CARD.md` with my probe numbers, helped me investigate the D5 duplicates, and drafted parts of this README. I checked the code by running it: the lander's raw count matched the topic's high watermarks (8,260 and later 73,842), and every chaos card gave the numbers I predicted. I edited the README so it describes what I actually did.
-- TODO: classmates or the instructor, if anyone helped.
+- **Reused code:** the WebSocket code in `producer.py` is based on `probe.py`. `lander.py` and `flow.py` follow the class scripts (`quakes_lander.py`, `quakes_flow.py`) and the Session 2 worksheet. `four_numbers.py` is copied from the Session 2 worksheet (Appendix A5).
+- **AI:** I used Claude (Anthropic) to catch up after missing the setup sessions. It walked me through setup, wrote first versions of `producer.py`, `lander.py` and `flow.py`, helped fill `SOURCE_CARD.md` with my probe numbers, helped me figure out the D5 duplicates, and drafted this README. I checked everything by running it: the lander's raw count matched the topic (8,260 and later 73,842), every chaos card gave the numbers I predicted, and two flow runs gave the same four numbers.
